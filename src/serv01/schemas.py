@@ -31,7 +31,10 @@ class UserCreate(BaseModel):
     @field_validator("full_name")
     @classmethod
     def strip_full_name(cls, value: str) -> str:
-        return value.strip()
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("full_name cannot be blank")
+        return normalized
 
 
 class LoginRequest(BaseModel):
@@ -69,7 +72,10 @@ class TemplateCreate(BaseModel):
     @field_validator("name")
     @classmethod
     def strip_name(cls, value: str) -> str:
-        return value.strip()
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("name cannot be blank")
+        return normalized
 
 
 class TemplateUpdate(BaseModel):
@@ -83,7 +89,18 @@ class TemplateUpdate(BaseModel):
     @field_validator("name")
     @classmethod
     def strip_name(cls, value: str | None) -> str | None:
-        return value.strip() if value is not None else None
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("name cannot be blank")
+        return normalized
+
+    @model_validator(mode="after")
+    def reject_null_name(self) -> "TemplateUpdate":
+        if "name" in self.model_fields_set and self.name is None:
+            raise ValueError("name cannot be null")
+        return self
 
 
 class TemplateResponse(FromAttributesModel):
@@ -117,7 +134,10 @@ class TaskCreate(BaseModel):
     @field_validator("name", "language")
     @classmethod
     def strip_required_text(cls, value: str) -> str:
-        return value.strip()
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value cannot be blank")
+        return normalized
 
     @field_validator("keywords")
     @classmethod
@@ -165,7 +185,12 @@ class TaskUpdate(BaseModel):
     @field_validator("name", "language")
     @classmethod
     def strip_optional_text(cls, value: str | None) -> str | None:
-        return value.strip() if value is not None else None
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value cannot be blank")
+        return normalized
 
     @field_validator("keywords")
     @classmethod
@@ -185,6 +210,30 @@ class TaskUpdate(BaseModel):
                 normalized.append(item)
                 seen.add(lookup)
         return normalized
+
+    @model_validator(mode="after")
+    def reject_null_required_fields(self) -> "TaskUpdate":
+        required_fields = {
+            "name",
+            "keywords",
+            "search_engine",
+            "search_depth",
+            "language",
+            "action_type",
+            "max_sites",
+            "max_actions",
+            "max_runtime_minutes",
+            "schedule_type",
+            "respect_robots_txt",
+        }
+        null_fields = sorted(
+            field
+            for field in required_fields.intersection(self.model_fields_set)
+            if getattr(self, field) is None
+        )
+        if null_fields:
+            raise ValueError(f"fields cannot be null: {', '.join(null_fields)}")
+        return self
 
 
 class TaskResponse(FromAttributesModel):

@@ -31,3 +31,18 @@ def test_template_crud(client: TestClient, auth_headers: dict[str, str]) -> None
 
     assert client.delete(f"/api/templates/{template_id}", headers=auth_headers).status_code == 204
     assert client.get("/api/templates", headers=auth_headers).json() == []
+
+
+def test_template_rejects_blank_or_null_name(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    blank = client.post("/api/templates", headers=auth_headers, json={"name": "   "})
+    assert blank.status_code == 422
+
+    template = client.post("/api/templates", headers=auth_headers, json={"name": "Valid"}).json()
+    null_name = client.patch(
+        f"/api/templates/{template['id']}",
+        headers=auth_headers,
+        json={"name": None},
+    )
+    assert null_name.status_code == 422

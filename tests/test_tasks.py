@@ -87,6 +87,25 @@ def test_task_validation_requires_cron_expression(
     assert response.status_code == 422
 
 
+def test_task_rejects_whitespace_name_and_null_required_update(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    invalid_name = client.post(
+        "/api/tasks",
+        headers=auth_headers,
+        json={"name": "   ", "keywords": ["widgets"]},
+    )
+    assert invalid_name.status_code == 422
+
+    task = create_task(client, auth_headers)
+    invalid_update = client.patch(
+        f"/api/tasks/{task['id']}",
+        headers=auth_headers,
+        json={"max_sites": None},
+    )
+    assert invalid_update.status_code == 422
+
+
 def test_task_rejects_template_owned_by_another_user(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:

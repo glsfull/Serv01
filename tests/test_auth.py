@@ -52,3 +52,15 @@ def test_registration_rejects_duplicate_email(client: TestClient) -> None:
 def test_protected_endpoint_requires_valid_token(client: TestClient) -> None:
     assert client.get("/api/tasks").status_code == 401
     assert client.get("/api/tasks", headers={"Authorization": "Bearer invalid"}).status_code == 401
+
+
+def test_registration_rejects_whitespace_only_name(client: TestClient) -> None:
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "email": "empty-name@example.com",
+            "password": "correct horse battery staple",
+            "full_name": "   ",
+        },
+    )
+    assert response.status_code == 422
