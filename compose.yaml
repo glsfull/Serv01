@@ -1,0 +1,31 @@
+services:
+  api:
+    build: .
+    environment:
+      SERV01_DATABASE_URL: postgresql+psycopg://serv01:serv01@database:5432/serv01
+      SERV01_ENVIRONMENT: production
+      SERV01_JWT_SECRET: ${SERV01_JWT_SECRET:?Set SERV01_JWT_SECRET before starting Compose}
+    ports:
+      - "8000:8000"
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: serv01
+      POSTGRES_USER: serv01
+      POSTGRES_PASSWORD: serv01
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U serv01 -d serv01"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
