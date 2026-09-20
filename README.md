@@ -1,143 +1,165 @@
 # Serv01
 
-Serv01 — основа SaaS-платформы для настройки и мониторинга задач поиска и обработки
-сайтов. Первая версия реализует защищённый API управления пользователями, профилями
-данных и жизненным циклом задач. Интерактивная документация доступна в Swagger UI.
+Serv01 — FastAPI-сервис для безопасного запуска наблюдаемых задач обхода сайтов.
+Пользователь создаёт задачу через API или серверный веб-интерфейс, API ставит прогон
+в Redis/RQ, а отдельный воркер открывает явно разрешённые страницы в headless Chromium,
+соблюдает `robots.txt`, сохраняет метаданные и скриншоты.
 
-## Что уже работает
+## Возможности
 
-- регистрация и вход по JWT; пароли хешируются Argon2;
-- изоляция задач и шаблонов между пользователями;
-- создание, просмотр, редактирование, удаление и клонирование задач;
-- переходы задач `draft → running → paused/stopped` с проверкой допустимости;
-- параметры поиска, действия, лимиты, одноразовый или cron-запуск;
-- CRUD шаблонов данных для заполнения форм;
-- аудит действий и API для сайтов, отправок, логов и агрегированной статистики;
-- SQLite для локального запуска и PostgreSQL через Docker Compose;
-- проверки Ruff, mypy и pytest в GitHub Actions.
+- регистрация и вход по JWT; для веб-интерфейса тот же JWT хранится в HttpOnly cookie;
+- CRUD и клонирование пользовательских задач и шаблонов;
+- отдельные записи `task_runs` со статусами `queued/running/success/failed`;
+- очередь Redis + RQ и отдельный процесс воркера;
+- точный allowlist доменов до любого сетевого обращения;
+- проверка `robots.txt`, честный User-Agent и таймаут не более 30 секунд на страницу;
+- Playwright Chromium, снимки страниц и только чтение списка тегов `<form>`;
+- история прогонов, собранные страницы и защищённая выдача PNG через API;
+- Jinja2-интерфейс: `/dashboard`, `/tasks`, `/templates`, `/login`, `/register`;
+- SQLite локально и полный стек PostgreSQL/Redis/API/worker в Docker Compose.
 
-Поисковые провайдеры, очередь воркеров, браузерная автоматизация, captcha/payment
-интеграции, веб-кабинет и экспорт отчётов — следующие независимые этапы. Текущий API
-сохраняет конфигурацию и состояние задач, но не выполняет действия на внешних сайтах.
-Такое разделение позволяет подключить воркеры через очередь без смешивания их прав и
-ресурсов с публичным API.
+## Граница безопасности
 
-Используйте автоматизацию только на ресурсах, где у вас есть явное разрешение.
-Параметр `respect_robots_txt` включён по умолчанию; будущие воркеры должны соблюдать
-его и заданные ограничения скорости. Обход защит и скрытая массовая отправка не входят
-в эту реализацию.
+По умолчанию разрешены только демонстрационные домены; чтобы добавить свои — правьте
+`SERV01_ALLOWED_HOSTS`. Совпадение строгое: разрешение `example.com` не разрешает
+`sub.example.com` или `example.com.evil.test`. Перенаправления и ресурсы страницы на
+домены вне списка блокируются до загрузки.
 
-## Быстрый старт
+Этот этап **не** регистрируется на внешних сайтах, не отправляет и не заполняет формы,
+не обходит CAPTCHA, не использует антидетект, прокси, ротацию User-Agent или поисковые
+API. Платежи, роли/тарифы, React и инфраструктура Kubernetes/Prometheus также остаются
+за рамками этапа.
 
-Требуется Python 3.12 или новее.
+## Локальный запуск
+
+Нужен **Python 3.12**. Python 3.14 не поддерживается на этом этапе из-за совместимости
+браузерного стека. Также нужны Redis и Chromium для Playwright.
 
 ```bash
-python -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]"
+.venv/bin/playwright install chromium
 cp .env.example .env
+```
+
+В первом терминале запустите API:
+
+```bash
 .venv/bin/uvicorn serv01.main:app --reload
 ```
 
-После запуска:
+Во втором — Redis, затем воркер:
 
-- API: <http://localhost:8000>
-- Swagger UI: <http://localhost:8000/docs>
-- OpenAPI: <http://localhost:8000/openapi.json>
-- проверка состояния: <http://localhost:8000/health>
+```bash
+redis-server
+.venv/bin/rq worker --url redis://localhost:6379 default
+```
 
-Для запуска API вместе с PostgreSQL:
+После запуска доступны:
+
+- веб-интерфейс: <http://localhost:8000/login>;
+- Swagger UI: <http://localhost:8000/docs>;
+- health check: <http://localhost:8000/health>.
+
+Для ручной проверки реального браузера без Redis:
+
+```bash
+.venv/bin/python scripts/smoke_e2e.py https://example.com
+```
+
+Скрипт применяет тот же allowlist и `robots.txt`, затем пишет снимок в
+`./data/screenshots/smoke.png`.
+
+## Docker Compose
+
+Полный стек запускается одной командой и работает от непривилегированного пользователя
+в контейнерах приложения:
 
 ```bash
 SERV01_JWT_SECRET="$(openssl rand -hex 32)" docker compose up --build
 ```
 
-Compose предназначен для локальной проверки. Перед production-развёртыванием нужно
-передать секреты через менеджер секретов, настроить TLS и постоянные резервные копии.
+Compose поднимает `api`, `worker`, `redis` и `database`. API и worker используют общий
+том `serv01-data` для скриншотов. После старта проверьте:
+
+```bash
+curl --fail http://localhost:8000/health
+```
 
 ## Пример API
 
-Регистрация возвращает bearer-токен:
+Регистрация возвращает bearer-токен и одновременно устанавливает HttpOnly cookie:
 
 ```bash
 curl -X POST http://localhost:8000/api/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{
-    "email": "owner@example.com",
-    "password": "correct horse battery staple",
-    "full_name": "Task Owner"
-  }'
+  -d '{"email":"owner@example.com","password":"correct horse battery staple","full_name":"Owner"}'
 ```
 
-Создание задачи (подставьте токен в `TOKEN`):
+Создайте задачу и передайте токен в `TOKEN`:
 
 ```bash
 curl -X POST http://localhost:8000/api/tasks \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
-    "name": "Поиск партнёров",
-    "keywords": ["поставщики оборудования"],
-    "search_engine": "google",
-    "search_depth": 10,
-    "action_type": "crawl",
-    "max_sites": 25,
+    "name": "Example crawl",
+    "keywords": ["example"],
+    "urls": ["https://example.com"],
     "respect_robots_txt": true
   }'
+
+curl -X POST http://localhost:8000/api/tasks/TASK_ID/start \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-Основные маршруты:
+Ответ запуска содержит состояние задачи и `task_run_id`. Результат читается через:
 
 | Метод | Маршрут | Назначение |
 | --- | --- | --- |
-| `POST` | `/api/auth/register`, `/api/auth/login` | регистрация и вход |
-| `GET` | `/api/auth/me` | текущий пользователь |
-| `GET/POST` | `/api/tasks` | список и создание задач |
-| `GET/PATCH/DELETE` | `/api/tasks/{id}` | управление задачей |
-| `POST` | `/api/tasks/{id}/start` | запуск или продолжение |
-| `POST` | `/api/tasks/{id}/pause` | пауза |
-| `POST` | `/api/tasks/{id}/stop` | остановка |
-| `POST` | `/api/tasks/{id}/clone` | клонирование |
-| `GET/POST` | `/api/templates` | список и создание шаблонов |
-| `GET/PATCH/DELETE` | `/api/templates/{id}` | управление шаблоном |
-| `GET` | `/api/sites`, `/api/submissions` | результаты воркеров |
-| `GET` | `/api/logs`, `/api/stats` | аудит и статистика |
+| `POST` | `/api/tasks/{id}/start` | создать прогон и поставить его в RQ |
+| `POST` | `/api/tasks/{id}/stop` | снять queued job или запросить отмену running job |
+| `GET` | `/api/tasks/{id}/runs` | история прогонов |
+| `GET` | `/api/tasks/{id}/runs/{rid}` | прогон, страницы и URL снимков |
+| `GET` | `/api/screenshots/{rid}/{n}` | защищённая выдача PNG владельцу |
 
-Для `/api/sites`, `/api/submissions`, `/api/logs` и `/api/stats` можно передать
-`task_id`. API проверяет, что задача принадлежит текущему пользователю.
+## Настройки
 
-## Конфигурация
+Переменные читаются из окружения и `.env` с префиксом `SERV01_`:
 
-Настройки читаются из переменных окружения с префиксом `SERV01_` и из `.env`:
+| Переменная | По умолчанию | Назначение |
+| --- | --- | --- |
+| `SERV01_DATABASE_URL` | `sqlite+pysqlite:///./serv01.db` | база API и worker |
+| `SERV01_REDIS_URL` | `redis://localhost:6379/0` | Redis для RQ |
+| `SERV01_QUEUE_NAME` | `default` | имя очереди |
+| `SERV01_ALLOWED_HOSTS` | `example.com,www.iana.org,httpbin.org` | строгий список разрешённых хостов |
+| `SERV01_SCREENSHOT_DIR` | `./data/screenshots` | общий каталог PNG |
+| `SERV01_BOT_USER_AGENT` | `Serv01Bot/0.1 (+contact@example.com)` | честный идентификатор робота |
+| `SERV01_PAGE_TIMEOUT_SECONDS` | `30` | таймаут страницы, максимум 30 секунд |
+| `SERV01_JWT_SECRET` | небезопасное dev-значение | ключ JWT; обязателен в production |
+| `SERV01_ACCESS_TOKEN_MINUTES` | `60` | срок JWT/cookie |
 
-| Переменная | Значение по умолчанию |
-| --- | --- |
-| `SERV01_DATABASE_URL` | `sqlite+pysqlite:///./serv01.db` |
-| `SERV01_JWT_SECRET` | только небезопасное значение для разработки |
-| `SERV01_ACCESS_TOKEN_MINUTES` | `60` |
-| `SERV01_CORS_ORIGINS` | локальные порты 3000 и 5173 |
-| `SERV01_ENVIRONMENT` | `development` |
+Для собственного домена, которым вы управляете:
 
-В режиме `production` приложение откажется запускаться с development-секретом.
+```dotenv
+SERV01_ALLOWED_HOSTS=example.com,www.iana.org,httpbin.org,my-site.example
+```
 
-## Разработка и проверки
+Поддомены добавляются отдельно. В production замените контакт в User-Agent на реальный.
+
+## Проверки
 
 ```bash
 .venv/bin/ruff check .
 .venv/bin/ruff format --check .
 .venv/bin/mypy src
 .venv/bin/pytest -q
+docker compose config
 ```
 
-Тесты используют отдельную in-memory SQLite базу и проверяют API через HTTP. Схема
-создаётся при старте приложения. До изменения существующей production-схемы следует
-добавить версионируемые миграции (например, Alembic).
+Тесты используют in-memory SQLite, поддельную очередь и поддельный crawler, поэтому CI
+не обращается к внешним сайтам и не требует Chromium. `scripts/smoke_e2e.py` намеренно
+остаётся отдельной ручной проверкой реального Playwright.
 
-## Следующие этапы
-
-1. Добавить Redis/RabbitMQ и отдельный планировщик, который атомарно забирает задачи в
-   статусе `running`.
-2. Реализовать адаптеры разрешённых поисковых API и дедупликацию доменов.
-3. Подключить crawler с robots.txt, ограничением домена, глубины, времени и частоты.
-4. Добавить worker API для записи сайтов, попыток и структурированных ошибок.
-5. Реализовать React/Next.js кабинет поверх стабильного OpenAPI-контракта.
-6. Добавить Alembic, объектное хранилище, метрики, резервные копии и нагрузочные тесты.
+При существующей production-базе новые таблицы и поля следует ввести миграцией перед
+обновлением. Для чистого локального или Compose-запуска схема создаётся автоматически.

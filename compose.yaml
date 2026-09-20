@@ -5,11 +5,47 @@ services:
       SERV01_DATABASE_URL: postgresql+psycopg://serv01:serv01@database:5432/serv01
       SERV01_ENVIRONMENT: production
       SERV01_JWT_SECRET: ${SERV01_JWT_SECRET:?Set SERV01_JWT_SECRET before starting Compose}
+      SERV01_REDIS_URL: redis://redis:6379/0
+      SERV01_ALLOWED_HOSTS: ${SERV01_ALLOWED_HOSTS:-example.com,www.iana.org,httpbin.org}
+      SERV01_SCREENSHOT_DIR: /data/screenshots
     ports:
       - "8000:8000"
     depends_on:
       database:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - serv01-data:/data
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["rq", "worker", "--url", "redis://redis:6379/0", "default"]
+    environment:
+      SERV01_DATABASE_URL: postgresql+psycopg://serv01:serv01@database:5432/serv01
+      SERV01_ENVIRONMENT: production
+      SERV01_JWT_SECRET: ${SERV01_JWT_SECRET:?Set SERV01_JWT_SECRET before starting Compose}
+      SERV01_REDIS_URL: redis://redis:6379/0
+      SERV01_ALLOWED_HOSTS: ${SERV01_ALLOWED_HOSTS:-example.com,www.iana.org,httpbin.org}
+      SERV01_SCREENSHOT_DIR: /data/screenshots
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - serv01-data:/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   database:
@@ -29,3 +65,4 @@ services:
 
 volumes:
   postgres-data:
+  serv01-data:
