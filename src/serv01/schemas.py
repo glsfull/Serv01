@@ -9,6 +9,7 @@ from serv01.domain import (
     ScheduleType,
     SearchEngine,
     SubmissionStatus,
+    TaskRunStatus,
     TaskStatus,
     UserRole,
 )
@@ -130,6 +131,7 @@ class TaskCreate(BaseModel):
     schedule_type: ScheduleType = ScheduleType.ONCE
     cron_expression: str | None = Field(default=None, max_length=100)
     respect_robots_txt: bool = True
+    urls: list[str] = Field(default_factory=list, max_length=100)
 
     @field_validator("name", "language")
     @classmethod
@@ -156,6 +158,11 @@ class TaskCreate(BaseModel):
                 seen.add(lookup)
         return normalized
 
+    @field_validator("urls")
+    @classmethod
+    def normalize_urls(cls, value: list[str]) -> list[str]:
+        return normalize_task_urls(value)
+
     @model_validator(mode="after")
     def validate_schedule(self) -> "TaskCreate":
         if self.schedule_type == ScheduleType.CRON:
@@ -181,6 +188,7 @@ class TaskUpdate(BaseModel):
     schedule_type: ScheduleType | None = None
     cron_expression: str | None = Field(default=None, max_length=100)
     respect_robots_txt: bool | None = None
+    urls: list[str] | None = Field(default=None, max_length=100)
 
     @field_validator("name", "language")
     @classmethod
@@ -211,6 +219,11 @@ class TaskUpdate(BaseModel):
                 seen.add(lookup)
         return normalized
 
+    @field_validator("urls")
+    @classmethod
+    def normalize_urls(cls, value: list[str] | None) -> list[str] | None:
+        return None if value is None else normalize_task_urls(value)
+
     @model_validator(mode="after")
     def reject_null_required_fields(self) -> "TaskUpdate":
         required_fields = {
@@ -225,6 +238,7 @@ class TaskUpdate(BaseModel):
             "max_runtime_minutes",
             "schedule_type",
             "respect_robots_txt",
+            "urls",
         }
         null_fields = sorted(
             field
@@ -252,6 +266,8 @@ class TaskResponse(FromAttributesModel):
     schedule_type: ScheduleType
     cron_expression: str | None
     respect_robots_txt: bool
+    urls: list[str]
+    statistics: dict[str, int]
     status: TaskStatus
     started_at: datetime | None
     stopped_at: datetime | None
@@ -264,6 +280,39 @@ class TaskPage(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class TaskStartResponse(TaskResponse):
+    task_run_id: UUID
+
+
+class SitePageResponse(FromAttributesModel):
+    id: UUID
+    task_run_id: UUID
+    page_number: int
+    title: str | None
+    url: str
+    status_code: int | None
+    forms: list[dict[str, Any]]
+    created_at: datetime
+
+
+class TaskRunResponse(FromAttributesModel):
+    id: UUID
+    task_id: UUID
+    status: TaskRunStatus
+    queue_job_id: str | None
+    cancel_requested: bool
+    started_at: datetime | None
+    finished_at: datetime | None
+    error: str | None
+    result_json: dict[str, Any] | None
+    created_at: datetime
+
+
+class TaskRunDetail(TaskRunResponse):
+    pages: list[SitePageResponse]
+    screenshots: list[str]
 
 
 class FoundSiteResponse(FromAttributesModel):
@@ -307,3 +356,20 @@ class StatsResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: Literal["ok"] = "ok"
     version: str
+
+
+def normalize_task_urls(value: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw_url in value:
+        url = raw_url.strip()
+        if not url:
+            raise ValueError("urls cannot contain empty values")
+        if not url.lower().startswith(("http://", "https://")):
+            raise ValueError("urls must use http or https")
+        if len(url) > 2048:
+            raise ValueError("each URL must contain at most 2048 characters")
+        if url not in seen:
+            normalized.append(url)
+            seen.add(url)
+    return normalized

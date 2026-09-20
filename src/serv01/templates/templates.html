@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Шаблоны · Serv01{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Данные</p><h1>Шаблоны</h1></div><a class="button" href="/templates/new">Новый шаблон</a></div>
+{% if templates %}<div class="card-list">{% for template in templates %}<article class="task-card"><div><h2>{{ template.name }}</h2><p>{{ template.full_name or 'Без имени' }} · {{ template.email or 'Без почты' }}</p></div></article>{% endfor %}</div>{% else %}<div class="panel empty">Шаблонов пока нет.</div>{% endif %}
+{% endblock %}

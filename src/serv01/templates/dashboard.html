@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Сводка · Serv01{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Рабочее пространство</p><h1>Здравствуйте, {{ user.full_name }}</h1></div><a class="button" href="/tasks/new">Новая задача</a></div>
+<section class="stats-grid">
+  <article><strong>{{ task_count }}</strong><span>задач</span></article>
+  <article><strong>{{ successful_runs }}</strong><span>успешных прогонов</span></article>
+  <article><strong>{{ failed_runs }}</strong><span>неудачных прогонов</span></article>
+</section>
+<section class="panel">
+  <h2>Последние события</h2>
+  {% if logs %}
+  <div class="log-list">
+    {% for log in logs %}<div><time>{{ log.created_at.strftime('%d.%m %H:%M') }}</time><span class="badge {{ log.level }}">{{ log.event }}</span><p>{{ log.message }}</p></div>{% endfor %}
+  </div>
+  {% else %}<p class="empty">Событий пока нет.</p>{% endif %}
+</section>
+{% endblock %}

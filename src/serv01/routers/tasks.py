@@ -2,14 +2,19 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
 
 from serv01.dependencies import CurrentUser, DbSession
 from serv01.domain import ScheduleType, TaskStatus
 from serv01.models import AutomationTask, DataTemplate
-from serv01.schemas import TaskCreate, TaskPage, TaskResponse, TaskUpdate
-from serv01.services import add_task_log, get_owned_task
+from serv01.schemas import TaskCreate, TaskPage, TaskResponse, TaskStartResponse, TaskUpdate
+from serv01.services import (
+    add_task_log,
+    cancel_active_run,
+    enqueue_task_run,
+    get_owned_task,
+)
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -158,6 +163,7 @@ def clone_task(task_id: UUID, session: DbSession, user: CurrentUser) -> Automati
         schedule_type=source.schedule_type,
         cron_expression=source.cron_expression,
         respect_robots_txt=source.respect_robots_txt,
+        urls=list(source.urls),
     )
     session.add(clone)
     session.flush()
@@ -172,28 +178,32 @@ def clone_task(task_id: UUID, session: DbSession, user: CurrentUser) -> Automati
     return clone
 
 
-@router.post("/{task_id}/start", response_model=TaskResponse)
-def start_task(task_id: UUID, session: DbSession, user: CurrentUser) -> AutomationTask:
+@router.post("/{task_id}/start", response_model=TaskStartResponse)
+def start_task(
+    task_id: UUID, request: Request, session: DbSession, user: CurrentUser
+) -> TaskStartResponse:
     task = require_owned_task(session, user, task_id)
-    allowed = {TaskStatus.DRAFT.value, TaskStatus.PAUSED.value, TaskStatus.STOPPED.value}
+    allowed = {TaskStatus.DRAFT.value, TaskStatus.PAUSED.value}
     if task.status not in allowed:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Task cannot be started from status '{task.status}'",
         )
-    previous_status = task.status
-    task.status = TaskStatus.RUNNING.value
-    if task.started_at is None:
-        task.started_at = datetime.now(UTC)
-    task.stopped_at = None
-    event = "task.resumed" if previous_status == TaskStatus.PAUSED.value else "task.started"
-    add_task_log(session, task, event, "Task started")
-    session.commit()
-    return task
+    try:
+        run = enqueue_task_run(session, task, request.app.state.task_queue)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Task queue is unavailable",
+        ) from exc
+    payload = TaskResponse.model_validate(task).model_dump()
+    return TaskStartResponse(**payload, task_run_id=UUID(run.id))
 
 
 @router.post("/{task_id}/pause", response_model=TaskResponse)
-def pause_task(task_id: UUID, session: DbSession, user: CurrentUser) -> AutomationTask:
+def pause_task(
+    task_id: UUID, request: Request, session: DbSession, user: CurrentUser
+) -> AutomationTask:
     task = require_owned_task(session, user, task_id)
     if task.status != TaskStatus.RUNNING.value:
         raise HTTPException(
@@ -201,13 +211,21 @@ def pause_task(task_id: UUID, session: DbSession, user: CurrentUser) -> Automati
             detail=f"Task cannot be paused from status '{task.status}'",
         )
     task.status = TaskStatus.PAUSED.value
+    cancel_active_run(
+        session,
+        task,
+        request.app.state.task_queue,
+        reason="paused_by_user",
+    )
     add_task_log(session, task, "task.paused", "Task paused")
     session.commit()
     return task
 
 
 @router.post("/{task_id}/stop", response_model=TaskResponse)
-def stop_task(task_id: UUID, session: DbSession, user: CurrentUser) -> AutomationTask:
+def stop_task(
+    task_id: UUID, request: Request, session: DbSession, user: CurrentUser
+) -> AutomationTask:
     task = require_owned_task(session, user, task_id)
     if task.status not in {TaskStatus.RUNNING.value, TaskStatus.PAUSED.value}:
         raise HTTPException(
@@ -216,6 +234,12 @@ def stop_task(task_id: UUID, session: DbSession, user: CurrentUser) -> Automatio
         )
     task.status = TaskStatus.STOPPED.value
     task.stopped_at = datetime.now(UTC)
+    cancel_active_run(
+        session,
+        task,
+        request.app.state.task_queue,
+        reason="stopped_by_user",
+    )
     add_task_log(session, task, "task.stopped", "Task stopped")
     session.commit()
     return task

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Регистрация · Serv01{% endblock %}
+{% block content %}
+<section class="auth-card">
+  <h1>Регистрация</h1>
+  {% if error %}<p class="alert">{{ error }}</p>{% endif %}
+  <form method="post" class="stack">
+    <label>Имя<input name="full_name" required maxlength="100" autocomplete="name"></label>
+    <label>Почта<input type="email" name="email" required autocomplete="email"></label>
+    <label>Пароль<input type="password" name="password" required minlength="12" autocomplete="new-password"></label>
+    <button type="submit">Создать аккаунт</button>
+  </form>
+  <p>Уже зарегистрированы? <a href="/login">Войти</a></p>
+</section>
+{% endblock %}
