@@ -24,12 +24,14 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     if credentials is None:
-        raise unauthorized
+        token = request.cookies.get("serv01_access_token")
+        if token is None:
+            raise unauthorized
+    else:
+        token = credentials.credentials
 
     try:
-        payload = decode_access_token(
-            credentials.credentials, request.app.state.settings.jwt_secret
-        )
+        payload = decode_access_token(token, request.app.state.settings.jwt_secret)
         user_id = payload.get("sub")
         if not isinstance(user_id, str):
             raise unauthorized

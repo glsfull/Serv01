@@ -15,6 +15,7 @@ def create_task(client: TestClient, headers: dict[str, str], **overrides: object
         "max_runtime_minutes": 30,
         "schedule_type": "once",
         "respect_robots_txt": True,
+        "urls": ["https://example.com"],
     }
     payload.update(overrides)
     response = client.post("/api/tasks", headers=headers, json=payload)
@@ -41,6 +42,7 @@ def test_task_crud_clone_and_lifecycle(client: TestClient, auth_headers: dict[st
     assert started.status_code == 200
     assert started.json()["status"] == "running"
     assert started.json()["started_at"] is not None
+    assert started.json()["task_run_id"]
 
     immutable = client.patch(
         f"/api/tasks/{task_id}", headers=auth_headers, json={"name": "Cannot change"}
@@ -54,6 +56,7 @@ def test_task_crud_clone_and_lifecycle(client: TestClient, auth_headers: dict[st
     resumed = client.post(f"/api/tasks/{task_id}/start", headers=auth_headers)
     assert resumed.status_code == 200
     assert resumed.json()["status"] == "running"
+    assert resumed.json()["task_run_id"] != started.json()["task_run_id"]
 
     stopped = client.post(f"/api/tasks/{task_id}/stop", headers=auth_headers)
     assert stopped.status_code == 200

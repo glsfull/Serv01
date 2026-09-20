@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Новая задача · Serv01{% endblock %}
+{% block content %}
+<div class="narrow">
+  <p class="eyebrow">Новая автоматизация</p><h1>Создать задачу</h1>
+  <p class="muted">Каждый URL должен принадлежать домену из <code>SERV01_ALLOWED_HOSTS</code>.</p>
+  {% if error %}<p class="alert">{{ error }}</p>{% endif %}
+  <form method="post" class="panel stack">
+    <label>Название<input name="name" required maxlength="120"></label>
+    <label>URL, по одному на строку<textarea name="urls" rows="6" required placeholder="https://example.com"></textarea></label>
+    <label>Шаблон<select name="template_id"><option value="">Без шаблона</option>{% for template in templates %}<option value="{{ template.id }}">{{ template.name }}</option>{% endfor %}</select></label>
+    <label class="checkbox"><input type="checkbox" name="respect_robots_txt" checked> Соблюдать robots.txt</label>
+    <div class="actions"><button type="submit">Создать</button><a class="button secondary" href="/tasks">Отмена</a></div>
+  </form>
+</div>
+{% endblock %}

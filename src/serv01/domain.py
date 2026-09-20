@@ -33,6 +33,13 @@ class TaskStatus(StrEnum):
     FAILED = "failed"
 
 
+class TaskRunStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
 class SubmissionStatus(StrEnum):
     PENDING = "pending"
     SUCCESS = "success"

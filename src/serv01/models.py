@@ -11,6 +11,7 @@ from serv01.domain import (
     ScheduleType,
     SearchEngine,
     SubmissionStatus,
+    TaskRunStatus,
     TaskStatus,
     UserRole,
 )
@@ -103,6 +104,8 @@ class AutomationTask(TimestampMixin, Base):
     )
     cron_expression: Mapped[str | None] = mapped_column(String(100))
     respect_robots_txt: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    urls: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    statistics: Mapped[dict[str, int]] = mapped_column(JSON, default=dict, nullable=False)
     status: Mapped[str] = mapped_column(
         String(20), default=TaskStatus.DRAFT.value, index=True, nullable=False
     )
@@ -118,6 +121,9 @@ class AutomationTask(TimestampMixin, Base):
         back_populates="task", cascade="all, delete-orphan"
     )
     logs: Mapped[list["TaskLog"]] = relationship(
+        back_populates="task", cascade="all, delete-orphan"
+    )
+    runs: Mapped[list["TaskRun"]] = relationship(
         back_populates="task", cascade="all, delete-orphan"
     )
 
@@ -183,3 +189,51 @@ class TaskLog(Base):
     )
 
     task: Mapped[AutomationTask] = relationship(back_populates="logs")
+
+
+class TaskRun(Base):
+    __tablename__ = "task_runs"
+    __table_args__ = (Index("ix_task_runs_task_created", "task_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    task_id: Mapped[str] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), default=TaskRunStatus.QUEUED.value, index=True, nullable=False
+    )
+    queue_job_id: Mapped[str | None] = mapped_column(String(100), index=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+    result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    task: Mapped[AutomationTask] = relationship(back_populates="runs")
+    pages: Mapped[list["SitePage"]] = relationship(
+        back_populates="task_run", cascade="all, delete-orphan"
+    )
+
+
+class SitePage(Base):
+    __tablename__ = "site_pages"
+    __table_args__ = (Index("ix_site_pages_run_number", "task_run_id", "page_number", unique=True),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    task_run_id: Mapped[str] = mapped_column(
+        ForeignKey("task_runs.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str | None] = mapped_column(String(500))
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    status_code: Mapped[int | None] = mapped_column(Integer)
+    forms: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
+    screenshot_path: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    task_run: Mapped[TaskRun] = relationship(back_populates="pages")

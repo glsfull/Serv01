@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ task.name }} · Serv01{% endblock %}
+{% block head %}{% if task.status == 'running' %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Задача</p><h1>{{ task.name }}</h1><span class="badge {{ task.status }}">{{ task.status }}</span></div><div class="actions">{% if task.status in ['draft', 'paused'] %}<form action="/tasks/{{ task.id }}/start" method="post"><button>Start</button></form>{% endif %}{% if task.status == 'running' %}<form action="/tasks/{{ task.id }}/pause" method="post"><button class="secondary">Pause</button></form><form action="/tasks/{{ task.id }}/stop" method="post"><button class="danger">Stop</button></form>{% endif %}</div></div>
+<div class="detail-grid">
+  <section class="panel"><h2>Параметры</h2><dl><dt>robots.txt</dt><dd>{{ 'да' if task.respect_robots_txt else 'нет' }}</dd><dt>URL</dt><dd>{% for url in task.urls %}<code class="url">{{ url }}</code>{% endfor %}</dd></dl></section>
+  <section class="panel"><h2>Статистика</h2><dl><dt>Страниц</dt><dd>{{ task.statistics.get('pages', 0) }}</dd><dt>Успешно</dt><dd>{{ task.statistics.get('successful_pages', 0) }}</dd><dt>Ошибок</dt><dd>{{ task.statistics.get('failed_pages', 0) }}</dd></dl></section>
+</div>
+<section class="panel"><h2>История прогонов</h2>{% if runs %}<div class="run-list">{% for run in runs %}<article><div><span class="badge {{ run.status }}">{{ run.status }}</span><time>{{ run.created_at.strftime('%d.%m.%Y %H:%M') }}</time>{% if run.error %}<p class="error-text">{{ run.error }}</p>{% endif %}</div>{% if run.status == 'success' %}<div class="screenshots">{% for page in run.pages %}<a href="/api/screenshots/{{ run.id }}/{{ page.page_number }}"><img src="/api/screenshots/{{ run.id }}/{{ page.page_number }}" alt="Снимок {{ page.page_number }}"></a>{% endfor %}</div>{% endif %}</article>{% endfor %}</div>{% else %}<p class="empty">Задача ещё не запускалась.</p>{% endif %}</section>
+{% endblock %}

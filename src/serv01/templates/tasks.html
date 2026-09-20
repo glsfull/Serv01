@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Задачи · Serv01{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Автоматизация</p><h1>Задачи</h1></div><a class="button" href="/tasks/new">Новая задача</a></div>
+{% if tasks %}
+<div class="card-list">
+  {% for task in tasks %}
+  <article class="task-card">
+    <div><span class="badge {{ task.status }}">{{ task.status }}</span><h2><a href="/tasks/{{ task.id }}">{{ task.name }}</a></h2><p>{{ task.urls|length }} URL · robots.txt {% if task.respect_robots_txt %}включён{% else %}выключен{% endif %}</p></div>
+    <div class="actions">
+      {% if task.status in ['draft', 'paused'] %}<form action="/tasks/{{ task.id }}/start" method="post"><button>Start</button></form>{% endif %}
+      {% if task.status == 'running' %}<form action="/tasks/{{ task.id }}/pause" method="post"><button class="secondary">Pause</button></form><form action="/tasks/{{ task.id }}/stop" method="post"><button class="danger">Stop</button></form>{% endif %}
+      <form action="/tasks/{{ task.id }}/clone" method="post"><button class="secondary">Clone</button></form>
+      {% if task.status != 'running' %}<form action="/tasks/{{ task.id }}/delete" method="post"><button class="ghost">Delete</button></form>{% endif %}
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}<div class="panel empty"><p>Создайте первую задачу с разрешённым URL.</p></div>{% endif %}
+{% endblock %}
