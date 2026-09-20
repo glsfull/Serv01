@@ -84,7 +84,11 @@ Compose поднимает `api`, `worker`, `redis` и `database`. API и worker
 
 ```bash
 curl --fail http://localhost:8000/health
+.venv/bin/python examples/verify_compose.py
 ```
+
+Второй вызов регистрирует тестового пользователя, выполняет разрешённый прогон,
+проверяет PNG и подтверждает блокировку домена вне allowlist.
 
 ## Пример API
 
